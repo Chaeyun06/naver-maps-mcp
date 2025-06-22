@@ -256,33 +256,10 @@ export default function ({ config }: { config: z.infer<typeof configSchema> }) {
     }
   );
 
-   // 정적 지도 이미지 생성 도구 (간소화된 버전)
-  server.tool(
-    "naver_static_map",
-    "네이버 지도 API를 사용하여 정적 지도 이미지 URL을 생성합니다",
-    {
-      center: z.string().describe('지도 중심 좌표 (경도,위도 형식) 또는 주소'),
-      level: z.number().min(1).max(14).default(6).describe("지도 확대 레벨 (1-14)"),
-      w: z.number().min(1).max(1024).default(400).describe("지도 이미지 너비 (px)"),
-      h: z.number().min(1).max(1024).default(400).describe("지도 이미지 높이 (px)"),
-    },
-    async ({ center, level, w, h }) => {
-      try {
-        let centerCoords = center;
-
-        // 좌표 형식이 아닌 경우 지오코딩 수행
-        if (!isCoordinate(center)) {
-          const geocodeResult = await makeNaverAPIRequest(
-            "/map-geocode/v2/geocode",
-            { query: center }
-          );
-          if (geocodeResult.addresses && geocodeResult.addresses.length > 0) {
-            const addr = geocodeResult.addresses[0];
-            centerCoords = `${addr.x},${addr.y}`;
-          }
-        }
-
-        // 정적 지도 URL 생성 (실제 이미지 요청은 하지 않음)
+// 네이버 지도 정적 이미지 실제 요청 함수
+async function getNaverMapImage(centerCoords, level, w, h, apiKeyId, apiKey) {
+    try {
+        // URL 생성
         const baseUrl = "https://maps.apigw.ntruss.com";
         const url = new URL("/map-static/v2/raster", baseUrl);
         
@@ -291,29 +268,114 @@ export default function ({ config }: { config: z.infer<typeof configSchema> }) {
         url.searchParams.append("w", w.toString());
         url.searchParams.append("h", h.toString());
         url.searchParams.append("format", "png");
-
-        const imageUrl = url.toString();
-
+        
+        // 실제 이미지 요청
+        const response = await fetch(url.toString(), {
+            method: 'GET',
+            headers: {
+                'x-ncp-apigw-api-key-id': apiKeyId,
+                'x-ncp-apigw-api-key': apiKey
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        // 이미지 데이터를 Blob으로 변환
+        const imageBlob = await response.blob();
+        
+        // Blob을 이용해 이미지 URL 생성 (브라우저에서 표시 가능)
+        const imageUrl = URL.createObjectURL(imageBlob);
+        
         return {
-          content: [
-            {
-              type: "text",
-              text: `🗺️ 정적 지도 이미지 URL이 생성되었습니다.\n\n📍 중심 좌표: ${centerCoords}\n📏 크기: ${w}x${h}px\n🔍 레벨: ${level}\n\n🔗 이미지 URL:\n${imageUrl}\n\n* 이 URL에 적절한 API 키 헤더를 포함하여 요청하면 지도 이미지를 받을 수 있습니다.`,
-            },
-          ],
+            success: true,
+            imageUrl: imageUrl,
+            blob: imageBlob
         };
-      } catch (error: any) {
+        
+    } catch (error) {
+        console.error('지도 이미지 요청 실패:', error);
         return {
-          content: [
-            {
-              type: "text",
-              text: `오류 발생: ${error.message}`,
-            },
-          ],
+            success: false,
+            error: error.message
         };
-      }
     }
-  );
+}
+
+// 사용 예시
+async function example() {
+    const result = await getNaverMapImage(
+        "127.1054221,37.3591614",  // 중심 좌표
+        16,                        // 줌 레벨
+        300,                       // 너비
+        200,                       // 높이
+        "YOUR_API_KEY_ID",         // API Key ID
+        "YOUR_API_KEY"             // API Key
+    );
+    
+    if (result.success) {
+        console.log('이미지 URL:', result.imageUrl);
+        
+        // HTML img 태그에 적용하는 예시
+        const img = document.createElement('img');
+        img.src = result.imageUrl;
+        img.alt = '네이버 지도 이미지';
+        document.body.appendChild(img);
+        
+        // 또는 다운로드 링크 생성
+        const downloadLink = document.createElement('a');
+        downloadLink.href = result.imageUrl;
+        downloadLink.download = 'naver_map.png';
+        downloadLink.textContent = '지도 이미지 다운로드';
+        document.body.appendChild(downloadLink);
+        
+    } else {
+        console.error('이미지 요청 실패:', result.error);
+    }
+}
+
+// Node.js 환경에서 사용하는 경우 (파일 저장)
+async function saveMapImageToFile(centerCoords, level, w, h, apiKeyId, apiKey, filename) {
+    const fs = require('fs').promises;
+    
+    try {
+        const baseUrl = "https://maps.apigw.ntruss.com";
+        const url = new URL("/map-static/v2/raster", baseUrl);
+        
+        url.searchParams.append("center", centerCoords);
+        url.searchParams.append("level", level.toString());
+        url.searchParams.append("w", w.toString());
+        url.searchParams.append("h", h.toString());
+        url.searchParams.append("format", "png");
+        
+        const response = await fetch(url.toString(), {
+            method: 'GET',
+            headers: {
+                'x-ncp-apigw-api-key-id': apiKeyId,
+                'x-ncp-apigw-api-key': apiKey
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        // ArrayBuffer로 이미지 데이터 받기
+        const arrayBuffer = await response.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+        
+        // 파일로 저장
+        await fs.writeFile(filename, buffer);
+        console.log(`지도 이미지가 ${filename}에 저장되었습니다.`);
+        
+        return { success: true, filename: filename };
+        
+    } catch (error) {
+        console.error('파일 저장 실패:', error);
+        return { success: false, error: error.message };
+    }
+}
 
   // 헬퍼 함수: 좌표 형식 확인
   function isCoordinate(str: string): boolean {
