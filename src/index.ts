@@ -1,4 +1,4 @@
-// src/index.ts
+// src/index.tsMore actions
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
@@ -38,13 +38,12 @@ export default function ({ config }: { config: z.infer<typeof configSchema> }) {
       headers: {
         "x-ncp-apigw-api-key-id": NAVER_CLIENT_ID,
         "x-ncp-apigw-api-key": NAVER_CLIENT_SECRET,
-        "Accept": "application/json"
       },
     });
 
     if (!response.ok) {
       throw new Error(
-        `네이버 API 오류: ${response.status} ${response.statusText}`
+        `네이버 API 오류: ${response.status} ${response.statusText} ${window.location.hostname}`
       );
     }
 
@@ -256,22 +255,17 @@ export default function ({ config }: { config: z.infer<typeof configSchema> }) {
     }
   );
 
-  // 정적 지도 이미지 생성 도구
+   // 정적 지도 이미지 생성 도구 (간소화된 버전)
   server.tool(
     "naver_static_map",
-    "네이버 지도 API를 사용하여 정적 지도 이미지를 생성합니다",
+    "네이버 지도 API를 사용하여 정적 지도 이미지 URL을 생성합니다",
     {
       center: z.string().describe('지도 중심 좌표 (경도,위도 형식) 또는 주소'),
       level: z.number().min(1).max(14).default(6).describe("지도 확대 레벨 (1-14)"),
       w: z.number().min(1).max(1024).default(400).describe("지도 이미지 너비 (px)"),
       h: z.number().min(1).max(1024).default(400).describe("지도 이미지 높이 (px)"),
-      maptype: z.enum(["basic", "satellite", "hybrid"]).default("basic").describe("지도 타입"),
-      format: z.enum(["png", "jpg"]).default("png").describe("이미지 포맷"),
-      scale: z.enum(["1", "2"]).default("1").describe("이미지 스케일 (해상도)"),
-      markers: z.string().optional().describe('마커 정보 (color:lat,lng|color:lat,lng 형식)'),
-      overlays: z.string().optional().describe('오버레이 정보'),
     },
-    async ({ center, level, w, h, maptype, format, scale, markers, overlays }) => {
+    async ({ center, level, w, h }) => {
       try {
         let centerCoords = center;
 
@@ -287,29 +281,15 @@ export default function ({ config }: { config: z.infer<typeof configSchema> }) {
           }
         }
 
-        const params: any = {
-          center: centerCoords,
-          level,
-          w,
-          h,
-          maptype,
-          format,
-          scale,
-        };
-
-        if (markers) params.markers = markers;
-        if (overlays) params.overlays = overlays;
-
-        // 정적 지도 API는 이미지를 반환하므로 다른 처리 방식 필요
-        const { NAVER_CLIENT_ID, NAVER_CLIENT_SECRET } = config;
+        // 정적 지도 URL 생성 (실제 이미지 요청은 하지 않음)
         const baseUrl = "https://maps.apigw.ntruss.com";
         const url = new URL("/map-static/v2/raster", baseUrl);
-
-        Object.keys(params).forEach((key) => {
-          if (params[key] !== undefined) {
-            url.searchParams.append(key, params[key]);
-          }
-        });
+        
+        url.searchParams.append("center", centerCoords);
+        url.searchParams.append("level", level.toString());
+        url.searchParams.append("w", w.toString());
+        url.searchParams.append("h", h.toString());
+        url.searchParams.append("format", "png");
 
         const imageUrl = url.toString();
         
@@ -317,7 +297,7 @@ export default function ({ config }: { config: z.infer<typeof configSchema> }) {
           content: [
             {
               type: "text",
-              text: `🗺️ 정적 지도 이미지가 생성되었습니다.\n\n📍 중심 좌표: ${centerCoords}\n📏 크기: ${w}x${h}px\n🔍 레벨: ${level}\n\n🔗 이미지 URL:\n${imageUrl}\n\n* 이 URL에 적절한 API 키 헤더를 포함하여 요청하면 지도 이미지를 받을 수 있습니다.`,
+              text: `🗺️ 정적 지도 이미지 URL이 생성되었습니다.\n\n📍 중심 좌표: ${centerCoords}\n📏 크기: ${w}x${h}px\n🔍 레벨: ${level}\n\n🔗 이미지 URL:\n${imageUrl}\n\n* 이 URL에 적절한 API 키 헤더를 포함하여 요청하면 지도 이미지를 받을 수 있습니다.`,
             },
           ],
         };
