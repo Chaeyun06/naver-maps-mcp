@@ -24,7 +24,7 @@ export default function ({ config }: { config: z.infer<typeof configSchema> }) {
   ) {
     const { NAVER_CLIENT_ID, NAVER_CLIENT_SECRET } = config;
 
-    const baseUrl = "https://naveropenapi.apigw.ntruss.com";
+    const baseUrl = "https://maps.apigw.ntruss.com";
     const url = new URL(endpoint, baseUrl);
 
     Object.keys(params).forEach((key) => {
@@ -36,14 +36,14 @@ export default function ({ config }: { config: z.infer<typeof configSchema> }) {
     const response = await fetch(url.toString(), {
       method: "GET",
       headers: {
-        "X-NCP-APIGW-API-KEY-ID": NAVER_CLIENT_ID,
-        "X-NCP-APIGW-API-KEY": NAVER_CLIENT_SECRET,
+        "x-ncp-apigw-api-key-id": NAVER_CLIENT_ID,
+        "x-ncp-apigw-api-key": NAVER_CLIENT_SECRET,
       },
     });
 
     if (!response.ok) {
       throw new Error(
-        `네이버 API 오류: ${response.status} ${response.statusText}`
+        `네이버 API 오류: ${response.status} ${response.statusText} ${window.location.hostname}`
       );
     }
 
