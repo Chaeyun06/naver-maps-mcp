@@ -265,11 +265,6 @@ export default function ({ config }: { config: z.infer<typeof configSchema> }) {
       level: z.number().min(1).max(14).default(6).describe("지도 확대 레벨 (1-14)"),
       w: z.number().min(1).max(1024).default(400).describe("지도 이미지 너비 (px)"),
       h: z.number().min(1).max(1024).default(400).describe("지도 이미지 높이 (px)"),
-
-
-
-
-
     },
     async ({ center, level, w, h }) => {
       try {
@@ -288,20 +283,6 @@ export default function ({ config }: { config: z.infer<typeof configSchema> }) {
         }
 
         // 정적 지도 URL 생성 (실제 이미지 요청은 하지 않음)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
         const baseUrl = "https://maps.apigw.ntruss.com";
         const url = new URL("/map-static/v2/raster", baseUrl);
         
