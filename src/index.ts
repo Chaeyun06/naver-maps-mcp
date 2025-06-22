@@ -256,7 +256,62 @@ export default function ({ config }: { config: z.infer<typeof configSchema> }) {
     }
   );
 
-  // 정적 지도 URL 생성 도구
+          // 정적 지도 이미지 실제 요청
+        const { NAVER_CLIENT_ID, NAVER_CLIENT_SECRET } = config;
+        const baseUrl = "https://maps.apigw.ntruss.com";
+        const url = new URL("/map-static/v2/raster", baseUrl);
+        
+        url.searchParams.append("center", centerCoords);
+        url.searchParams.append("level", level.toString());
+        url.searchParams.append("w", w.toString());
+        url.searchParams.append("h", h.toString());
+        url.searchParams.append("format", "png");
+
+        const response = await fetch(url.toString(), {
+          method: "GET",
+          headers: {
+            "x-ncp-apigw-api-key-id": NAVER_CLIENT_ID,
+            "x-ncp-apigw-api-key": NAVER_CLIENT_SECRET,
+          },
+        });
+
+        if (!response.ok) {
+          throw new Error(
+            `네이버 지도 이미지 API 오류: ${response.status} ${response.statusText}`
+          );
+        }
+
+        // 이미지 데이터를 Base64로 변환
+        const arrayBuffer = await response.arrayBuffer();
+        const base64Image = Buffer.from(arrayBuffer).toString('base64');
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: `🗺️ 정적 지도 이미지가 생성되었습니다.\n📍 중심: ${centerCoords}\n📏 크기: ${w}×${h}px\n🔍 레벨: ${level}`,
+            },
+            {
+              type: "image",
+              data: base64Image,
+              mimeType: "image/png",
+            },
+          ],
+        };
+      } catch (error: any) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `오류 발생: ${error.message}`,
+            },
+          ],
+        };
+      }
+    }
+  );
+
+  // 정적 지도 URL 생성 도구 (기존 유지)
   server.tool(
     "naver_static_map_url",
     "네이버 지도 API를 사용하여 정적 지도 이미지 URL을 생성합니다",
@@ -298,7 +353,7 @@ export default function ({ config }: { config: z.infer<typeof configSchema> }) {
           content: [
             {
               type: "text",
-              text: `🗺️ 정적 지도 이미지 URL이 생성되었습니다.\n\n📍 중심 좌표: ${centerCoords}\n📏 크기: ${w}x${h}px\n🔍 레벨: ${level}\n\n🔗 이미지 URL:\n${imageUrl}\n\n* 이 URL에 적절한 API 키 헤더를 포함하여 요청하면 지도 이미지를 받을 수 있습니다.`,
+              text: `🗺️ 정적 지도 이미지 URL이 생성되었습니다.\n\n📍 중심 좌표: ${centerCoords}\n📏 크기: ${w}x${h}px\n🔍 레벨: ${level}\n\n🔗 이미지 URL:\n${imageUrl}\n\n📋 Curl 명령어:\ncurl -H "x-ncp-apigw-api-key-id: YOUR_CLIENT_ID" -H "x-ncp-apigw-api-key: YOUR_CLIENT_SECRET" "${imageUrl}" -o map.png`,
             },
           ],
         };
@@ -314,6 +369,7 @@ export default function ({ config }: { config: z.infer<typeof configSchema> }) {
       }
     }
   );
+
 
   // 헬퍼 함수: 좌표 형식 확인
   function isCoordinate(str: string): boolean {
