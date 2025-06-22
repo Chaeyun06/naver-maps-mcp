@@ -325,5 +325,5 @@ export default function ({ config }: { config: z.infer<typeof configSchema> }) {
     );
   }
 
-  return server.server;More actions
+  return server.server;
 }
