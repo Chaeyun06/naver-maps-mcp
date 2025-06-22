@@ -256,7 +256,7 @@ export default function ({ config }: { config: z.infer<typeof configSchema> }) {
     }
   );
 
-  // 정적 지도 URL 생성 도구 (Node.js 환경에 맞게 수정)
+  // 정적 지도 URL 생성 도구
   server.tool(
     "naver_static_map_url",
     "네이버 지도 API를 사용하여 정적 지도 이미지 URL을 생성합니다",
