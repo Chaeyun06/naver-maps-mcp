@@ -1,0 +1,27 @@
+version: 1
+runtime: "typescript"
+entry: "./src/index.ts"
+configSchema:
+  type: "object"
+  properties:
+    NAVER_CLIENT_ID:
+      type: "string"
+      title: "네이버 클라이언트 ID"
+      description: "네이버 클라우드 플랫폼에서 발급받은 Client ID"
+    NAVER_CLIENT_SECRET:
+      type: "string"
+      title: "네이버 클라이언트 시크릿"
+      description: "네이버 클라우드 플랫폼에서 발급받은 Client Secret"
+      format: "password"
+    debug:
+      type: "boolean"
+      title: "디버그 모드"
+      description: "디버그 로깅 활성화"
+      default: false
+  required:
+    - NAVER_CLIENT_ID
+    - NAVER_CLIENT_SECRET
+exampleConfig:
+  NAVER_CLIENT_ID: "your_client_id_here"
+  NAVER_CLIENT_SECRET: "your_client_secret_here"
+  debug: false
