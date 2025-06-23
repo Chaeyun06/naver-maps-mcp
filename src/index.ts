@@ -1,8 +1,9 @@
-// src/index.tsMore actions
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-// Configuration Schema 정의 (공식 문서 권장 사항)
+// -----------------------------------------------------------------------------
+// Configuration Schema (unchanged)
+// -----------------------------------------------------------------------------
 export const configSchema = z.object({
   NAVER_CLIENT_ID: z.string().describe("네이버 클라우드 플랫폼 Client ID"),
   NAVER_CLIENT_SECRET: z
@@ -11,47 +12,73 @@ export const configSchema = z.object({
   debug: z.boolean().default(false).describe("디버그 로깅 활성화"),
 });
 
-export default function ({ config }: { config: z.infer<typeof configSchema> }) {
+// -----------------------------------------------------------------------------
+// Main Export
+// -----------------------------------------------------------------------------
+export default function ({
+  config,
+}: {
+  config: z.infer<typeof configSchema>;
+}) {
   const server = new McpServer({
     name: "naver-directions",
     version: "1.0.0",
   });
 
-  // 네이버 API 공통 호출 함수
+  // ---------------------------------------------------------------------------
+  // 네이버 API 공통 호출 함수 (expectBinary 플래그 추가)
+  // ---------------------------------------------------------------------------
   async function makeNaverAPIRequest(
     endpoint: string,
-    params: Record<string, any>
+    params: Record<string, any>,
+    expectBinary = false
   ) {
     const { NAVER_CLIENT_ID, NAVER_CLIENT_SECRET } = config;
 
     const baseUrl = "https://maps.apigw.ntruss.com";
     const url = new URL(endpoint, baseUrl);
 
-    Object.keys(params).forEach((key) => {
-      if (params[key] !== undefined) {
-        url.searchParams.append(key, params[key]);
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined) {
+        url.searchParams.append(key, String(value));
       }
     });
 
     const response = await fetch(url.toString(), {
       method: "GET",
       headers: {
-        "x-ncp-apigw-api-key-id": NAVER_CLIENT_ID,
-        "x-ncp-apigw-api-key": NAVER_CLIENT_SECRET,
+        "X-NCP-APIGW-API-KEY-ID": NAVER_CLIENT_ID,
+        "X-NCP-APIGW-API-KEY": NAVER_CLIENT_SECRET,
       },
     });
 
     if (!response.ok) {
-      // window.location.hostname 제거 - Node.js 환경에서 사용 불가
       throw new Error(
         `네이버 API 오류: ${response.status} ${response.statusText}`
       );
     }
 
-    return await response.json();
+    return expectBinary ? response.arrayBuffer() : response.json();
   }
 
-  // 길찾기 도구
+  // ---------------------------------------------------------------------------
+  // Helper: 좌표 형식 확인
+  // ---------------------------------------------------------------------------
+  function isCoordinate(str: string): boolean {
+    const [lng, lat] = str.split(",").map((s) => parseFloat(s.trim()));
+    return (
+      !isNaN(lng) &&
+      !isNaN(lat) &&
+      lng >= -180 &&
+      lng <= 180 &&
+      lat >= -90 &&
+      lat <= 90
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // 길찾기 도구 (기존 로직 유지)
+  // ---------------------------------------------------------------------------
   server.tool(
     "naver_directions",
     "네이버 지도 API를 사용하여 두 지점 간의 길찾기 정보를 제공합니다",
@@ -75,30 +102,33 @@ export default function ({ config }: { config: z.infer<typeof configSchema> }) {
         let startCoords = start;
         let goalCoords = goal;
 
-        // 좌표 형식이 아닌 경우 지오코딩 수행
         if (!isCoordinate(start)) {
-          const geocodeResult = await makeNaverAPIRequest(
+          const geo = await makeNaverAPIRequest(
             "/map-geocode/v2/geocode",
             { query: start }
           );
-          if (geocodeResult.addresses && geocodeResult.addresses.length > 0) {
-            const addr = geocodeResult.addresses[0];
-            startCoords = `${addr.x},${addr.y}`;
+          if (geo.addresses?.length) {
+            const { x, y } = geo.addresses[0];
+            startCoords = `${x},${y}`;
           }
         }
 
         if (!isCoordinate(goal)) {
-          const geocodeResult = await makeNaverAPIRequest(
+          const geo = await makeNaverAPIRequest(
             "/map-geocode/v2/geocode",
             { query: goal }
           );
-          if (geocodeResult.addresses && geocodeResult.addresses.length > 0) {
-            const addr = geocodeResult.addresses[0];
-            goalCoords = `${addr.x},${addr.y}`;
+          if (geo.addresses?.length) {
+            const { x, y } = geo.addresses[0];
+            goalCoords = `${x},${y}`;
           }
         }
 
-        const params: any = { start: startCoords, goal: goalCoords, option };
+        const params: Record<string, any> = {
+          start: startCoords,
+          goal: goalCoords,
+          option,
+        };
         if (waypoints) params.waypoints = waypoints;
 
         const data = await makeNaverAPIRequest(
@@ -106,26 +136,20 @@ export default function ({ config }: { config: z.infer<typeof configSchema> }) {
           params
         );
 
-        // 결과 처리
         const route = data.route || {};
-        const bestRoute =
+        const best =
           route.trafast?.[0] ||
           route.traoptimal?.[0] ||
           route.tracomfort?.[0] ||
           route.trainormal?.[0];
 
-        if (!bestRoute) {
+        if (!best) {
           return {
-            content: [
-              {
-                type: "text",
-                text: "경로를 찾을 수 없습니다.",
-              },
-            ],
+            content: [{ type: "text", text: "경로를 찾을 수 없습니다." }],
           };
         }
 
-        const summary = bestRoute.summary;
+        const { summary } = best;
         const result = {
           distance: `${(summary.distance / 1000).toFixed(1)}km`,
           duration: `${Math.round(summary.duration / 60000)}분`,
@@ -147,68 +171,51 @@ export default function ({ config }: { config: z.infer<typeof configSchema> }) {
             },
           ],
         };
-      } catch (error: any) {
+      } catch (err: any) {
         return {
-          content: [
-            {
-              type: "text",
-              text: `오류 발생: ${error.message}`,
-            },
-          ],
+          content: [{ type: "text", text: `오류 발생: ${err.message}` }],
         };
       }
     }
   );
 
-  // 지오코딩 도구
+  // ---------------------------------------------------------------------------
+  // 지오코딩 & 역지오코딩 도구 (원본 유지)
+  // ---------------------------------------------------------------------------
   server.tool(
     "naver_geocode",
     "주소를 위도/경도 좌표로 변환합니다",
-    {
-      address: z.string().describe("변환할 주소"),
-    },
+    { address: z.string().describe("변환할 주소") },
     async ({ address }) => {
       try {
-        const data = await makeNaverAPIRequest("/map-geocode/v2/geocode", {
-          query: address,
-        });
+        const data = await makeNaverAPIRequest(
+          "/map-geocode/v2/geocode",
+          { query: address }
+        );
 
-        if (!data.addresses || data.addresses.length === 0) {
+        if (!data.addresses?.length) {
           return {
-            content: [
-              {
-                type: "text",
-                text: "주소를 찾을 수 없습니다.",
-              },
-            ],
+            content: [{ type: "text", text: "주소를 찾을 수 없습니다." }],
           };
         }
 
-        const addr = data.addresses[0];
+        const { y, x, roadAddress, jibunAddress } = data.addresses[0];
         return {
           content: [
             {
               type: "text",
-              text: `📍 주소: ${
-                addr.roadAddress || addr.jibunAddress
-              }\n🌐 좌표: ${addr.y}, ${addr.x} (위도, 경도)`,
+              text: `📍 주소: ${roadAddress || jibunAddress}\n🌐 좌표: ${y}, ${x} (위도, 경도)`,
             },
           ],
         };
-      } catch (error: any) {
+      } catch (err: any) {
         return {
-          content: [
-            {
-              type: "text",
-              text: `오류 발생: ${error.message}`,
-            },
-          ],
+          content: [{ type: "text", text: `오류 발생: ${err.message}` }],
         };
       }
     }
   );
 
-  // 역지오코딩 도구
   server.tool(
     "naver_reverse_geocode",
     "위도/경도 좌표를 주소로 변환합니다",
@@ -218,112 +225,93 @@ export default function ({ config }: { config: z.infer<typeof configSchema> }) {
     },
     async ({ lat, lng }) => {
       try {
-        const data = await makeNaverAPIRequest("/map-reversegeocode/v2/gc", {
-          coords: `${lng},${lat}`,
-          output: "json",
-        });
+        const data = await makeNaverAPIRequest(
+          "/map-reversegeocode/v2/gc",
+          { coords: `${lng},${lat}`, output: "json" }
+        );
 
-        if (!data.results || data.results.length === 0) {
+        if (!data.results?.length) {
           return {
-            content: [
-              {
-                type: "text",
-                text: "해당 좌표의 주소를 찾을 수 없습니다.",
-              },
-            ],
+            content: [{ type: "text", text: "해당 좌표의 주소를 찾을 수 없습니다." }],
           };
         }
 
-        const result = data.results[0];
+        const { text } = data.results[0];
         return {
           content: [
             {
               type: "text",
-              text: `🌐 좌표: ${lat}, ${lng}\n📍 주소: ${result.text}`,
+              text: `🌐 좌표: ${lat}, ${lng}\n📍 주소: ${text}`,
             },
           ],
         };
-      } catch (error: any) {
+      } catch (err: any) {
         return {
-          content: [
-            {
-              type: "text",
-              text: `오류 발생: ${error.message}`,
-            },
-          ],
+          content: [{ type: "text", text: `오류 발생: ${err.message}` }],
         };
       }
     }
   );
 
-  // 정적 지도 URL 생성 도구
+  // ---------------------------------------------------------------------------
+  // 정적 지도 생성 도구: 이미지(Base64) 반환으로 변경
+  // ---------------------------------------------------------------------------
   server.tool(
-    "naver_static_map_url",
-    "네이버 지도 API를 사용하여 정적 지도 이미지 URL을 생성합니다",
+    "naver_static_map",
+    "네이버 지도 API를 사용하여 정적 지도 이미지를 Base64 data URI로 반환합니다",
     {
-      center: z.string().describe('지도 중심 좌표 (경도,위도 형식) 또는 주소'),
-      level: z.number().min(1).max(14).default(6).describe("지도 확대 레벨 (1-14)"),
-      w: z.number().min(1).max(1024).default(400).describe("지도 이미지 너비 (px)"),
-      h: z.number().min(1).max(1024).default(400).describe("지도 이미지 높이 (px)"),
+      center: z.string().describe("지도 중심 좌표 (경도,위도 형식) 또는 주소"),
+      level: z.number().min(1).max(20).default(6).describe("지도 확대 레벨 (1-20)"),
+      w: z.number().min(1).max(1280).default(400).describe("지도 이미지 너비(px)"),
+      h: z.number().min(1).max(1280).default(400).describe("지도 이미지 높이(px)"),
+      format: z.enum(["png", "jpeg"]).default("png").describe("이미지 포맷"),
     },
-    async ({ center, level, w, h }) => {
+    async ({ center, level, w, h, format }) => {
       try {
         let centerCoords = center;
 
-        // 좌표 형식이 아닌 경우 지오코딩 수행
         if (!isCoordinate(center)) {
-          const geocodeResult = await makeNaverAPIRequest(
+          const geo = await makeNaverAPIRequest(
             "/map-geocode/v2/geocode",
             { query: center }
           );
-          if (geocodeResult.addresses && geocodeResult.addresses.length > 0) {
-            const addr = geocodeResult.addresses[0];
-            centerCoords = `${addr.x},${addr.y}`;
+          if (!geo.addresses?.length) {
+            throw new Error("지오코딩 결과가 없습니다.");
           }
+          const { x, y } = geo.addresses[0];
+          centerCoords = `${x},${y}`;
         }
 
-        // 정적 지도 URL 생성
-        const baseUrl = "https://maps.apigw.ntruss.com";
-        const url = new URL("/map-static/v2/raster", baseUrl);
+        // 정적 지도 호출 → 바이너리
+        const buffer = (await makeNaverAPIRequest(
+          "/map-static/v2/raster",
+          { center: centerCoords, level, w, h, format },
+          true
+        )) as ArrayBuffer;
 
-        url.searchParams.append("center", centerCoords);
-        url.searchParams.append("level", level.toString());
-        url.searchParams.append("w", w.toString());
-        url.searchParams.append("h", h.toString());
-        url.searchParams.append("format", "png");
-
-        const imageUrl = url.toString();
+        // Base64 인코딩 & Data URI
+        const base64 = Buffer.from(buffer).toString("base64");
+        const dataUri = `data:image/${format};base64,${base64}`;
 
         return {
           content: [
             {
+              type: "image",
+              image_url: dataUri,
+            },
+            {
               type: "text",
-              text: `🗺️ 정적 지도 이미지 URL이 생성되었습니다.\n\n📍 중심 좌표: ${centerCoords}\n📏 크기: ${w}x${h}px\n🔍 레벨: ${level}\n\n🔗 이미지 URL:\n${imageUrl}\n\n* 이 URL에 적절한 API 키 헤더를 포함하여 요청하면 지도 이미지를 받을 수 있습니다.`,
+              text: `🗺️ 정적 지도 (center: ${centerCoords}, level: ${level}, size: ${w}x${h})`,
             },
           ],
         };
-      } catch (error: any) {
+      } catch (err: any) {
         return {
-          content: [
-            {
-              type: "text",
-              text: `오류 발생: ${error.message}`,
-            },
-          ],
+          content: [{ type: "text", text: `오류 발생: ${err.message}` }],
         };
       }
     }
   );
-
-  // 헬퍼 함수: 좌표 형식 확인
-  function isCoordinate(str: string): boolean {
-    const parts = str.split(",");
-    return (
-      parts.length === 2 &&
-      !isNaN(parseFloat(parts[0])) &&
-      !isNaN(parseFloat(parts[1]))
-    );
-  }
 
   return server.server;
 }
